@@ -25,6 +25,7 @@ const assert = (condition, message) => {
   if (!condition) throw new Error(`Pages workflow contract failed: ${message}`);
 };
 const action = (name) => `uses: actions/${name}@${pins[name][0]} # ${pins[name][1]}`;
+const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 const parseWorkflow = (source, filename) => {
   const directory = mkdtempSync(join(tmpdir(), 'pages-workflow-'));
@@ -63,7 +64,9 @@ const validateActionPins = (workflow, source, names, filename) => {
   const allowed = new Set(names.map((name) => `actions/${name}@${pins[name][0]}`));
   const usages = [];
   for (const [jobName, job] of Object.entries(workflowJobs(workflow, filename))) {
-    if (!job || typeof job !== 'object' || Array.isArray(job) || job.steps === undefined) continue;
+    if (!job || typeof job !== 'object' || Array.isArray(job)) continue;
+    assert(!Object.hasOwn(job, 'uses'), `${filename} jobs.${jobName} must not call a reusable workflow.`);
+    if (job.steps === undefined) continue;
     for (const [index, step] of jobSteps(workflowJobs(workflow, filename), jobName, filename).entries()) {
       if (!Object.hasOwn(step, 'uses')) continue;
       assert(typeof step.uses === 'string', `${filename} jobs.${jobName}.steps[${index}].uses must be a string.`);
@@ -72,8 +75,11 @@ const validateActionPins = (workflow, source, names, filename) => {
   }
   assert(usages.length > 0, 'workflows must use pinned actions.');
   for (const name of names) {
-    assert(source.includes(action(name)), `actions/${name} must use its immutable pin with a human version comment.`);
-    assert(usages.some(({ uses }) => uses === `actions/${name}@${pins[name][0]}`), `actions/${name} must use its approved immutable pin.`);
+    const approvedUse = `actions/${name}@${pins[name][0]}`;
+    const parsedCount = usages.filter(({ uses }) => uses === approvedUse).length;
+    const documentedCount = (source.match(new RegExp(`^\\s*uses:\\s*${escapeRegExp(approvedUse)}\\s+#\\s*${escapeRegExp(pins[name][1])}\\s*$`, 'gm')) ?? []).length;
+    assert(parsedCount > 0, `actions/${name} must use its approved immutable pin.`);
+    assert(documentedCount === parsedCount, `each actions/${name} use must carry its human version comment.`);
   }
   for (const { uses } of usages) {
     assert(allowed.has(uses), `mutable or unknown action reference is forbidden: ${uses}.`);
@@ -155,6 +161,8 @@ if (process.argv.includes('--self-test')) {
   expectRejects('forged step labels cannot mask source checkout before validation', () => validateWorkflows(pagesWorkflow.replace('name: Deploy scCCVGBen GitHub Pages', 'name: Deploy scCCVGBen GitHub Pages\n# name: Checkout deployment repository\n# name: Validate immutable source revision\n# name: Checkout scCCVGBen source revision').replace(`      - name: Checkout deployment repository\n        ${action('checkout')}\n        with:\n          persist-credentials: false\n\n      - name: Validate immutable source revision\n        env:\n          SOURCE_REF: \${{ inputs.source_ref }}\n        run: node scripts/validate-approved-source.mjs "$SOURCE_REF"\n\n      - name: Checkout scCCVGBen source revision\n        ${action('checkout')}\n        with:\n          repository: PeterPonyu/scCCVGBen\n          ref: \${{ inputs.source_ref }}\n          persist-credentials: false`, `      - name: Checkout scCCVGBen source revision\n        ${action('checkout')}\n        with:\n          repository: PeterPonyu/scCCVGBen\n          ref: \${{ inputs.source_ref }}\n          persist-credentials: false\n\n      - name: Checkout deployment repository\n        ${action('checkout')}\n        with:\n          persist-credentials: false\n\n      - name: Validate immutable source revision\n        env:\n          SOURCE_REF: \${{ inputs.source_ref }}\n        run: node scripts/validate-approved-source.mjs "$SOURCE_REF"`), validationWorkflow, approvedSources));
   expectRejects('untrusted action tag', () => validateWorkflows(pagesWorkflow.replace(action('setup-node'), 'uses: attacker/untrusted-action@v1 # v1'), validationWorkflow, approvedSources));
   expectRejects('unknown action immutable SHA', () => validateWorkflows(pagesWorkflow.replace(action('setup-node'), 'uses: attacker/untrusted-action@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa # v1'), validationWorkflow, approvedSources));
+  expectRejects('reusable workflow action', () => validateWorkflows(`${pagesWorkflow}\n  evil:\n    uses: attacker/untrusted-action@v1\n`, validationWorkflow, approvedSources));
+  expectRejects('unrelated action comment cannot document an executable use', () => validateWorkflows(`${pagesWorkflow.replace(action('setup-node'), `uses: actions/setup-node@${pins['setup-node'][0]}`)}\n# ${action('setup-node')}\n`, validationWorkflow, approvedSources));
   expectRejects('validator rejects unapproved source', () => validateApprovedSource('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', approvedSources));
   expectRejects('validator rejects malformed allowlist', () => validateApprovedSource(approvedSource, `${approvedSource}\nmain\n`));
   console.log('Pages workflow checker self-test passed.');
