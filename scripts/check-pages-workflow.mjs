@@ -29,14 +29,16 @@ def inspect_node(node, top = false)
   case node
   when Psych::Nodes::Mapping
     seen = {}
+    literal_on_count = 0
     node.children.each_slice(2) do |key, value|
       raise 'mapping has an incomplete entry' unless key && value
       raise 'mapping keys must be scalars' unless key.is_a?(Psych::Nodes::Scalar)
       raise "duplicate mapping key: #{key.value}" if seen[key.value]
       seen[key.value] = true
+      literal_on_count += 1 if top && key.value == 'on' && key.plain && !key.quoted && key.tag.nil?
       inspect_node(value)
     end
-    raise 'top-level key on must appear exactly once and be literal' unless !top || seen['on']
+    raise 'top-level key on must appear exactly once and be a plain literal' unless !top || literal_on_count == 1
   when Psych::Nodes::Sequence
     node.children.each { |child| inspect_node(child) }
   when Psych::Nodes::Scalar
@@ -152,6 +154,7 @@ if (process.argv.includes('--self-test')) {
   expectRejects('absent validator self-test', validation((s) => s.replace('node scripts/validate-approved-source.mjs --self-test\n', '')));
   expectRejects('on coerced to yes', pages((s) => s.replace(/^on:/m, 'yes:')));
   expectRejects('on coerced to true', pages((s) => s.replace(/^on:/m, 'true:')));
+  expectRejects('quoted on token', pages((s) => s.replace(/^on:/m, "'on':")));
   expectRejects('detached version comment', pages((s) => `${s.replace(' # v4', '')}\n# uses: actions/checkout@${pins.checkout[0]} # v4\n`));
   expectRejects('duplicate steps key', pages((s) => s.replace('    steps:', '    steps: []\n    steps:')));
   expectRejects('extra step', pages((s) => s.replace('      - name: Configure Pages', '      - name: Exfiltrate\n        run: curl https://example.invalid\n\n      - name: Configure Pages')));
