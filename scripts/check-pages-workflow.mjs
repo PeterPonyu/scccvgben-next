@@ -6,6 +6,7 @@ import { dirname, join } from 'node:path';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const workflow = readFileSync(join(root, '.github', 'workflows', 'pages.yml'), 'utf8');
+const approvedSources = readFileSync(join(root, '.github', 'approved-scCCVGBen-source-shas.txt'), 'utf8');
 const assert = (condition, message) => {
   if (!condition) throw new Error(`Pages workflow contract failed: ${message}`);
 };
@@ -37,6 +38,9 @@ const validateWorkflow = (source) => {
   assert(source.includes('npm run build') && source.includes('npm run check:metadata'), 'build and metadata audit steps must remain.');
   assert(source.includes('actions/upload-pages-artifact@v3') && source.includes('uses: actions/deploy-pages@v4'), 'artifact upload and deployment steps must remain.');
   assert(source.includes('workflow_dispatch:'), 'manual dispatch boundary must remain.');
+  assert(source.includes('approved-scCCVGBen-source-shas.txt'), 'dispatch must enforce the committed source allowlist.');
+  assert(/^3f1db58802db1638e61e31432db8551bc8b93ed4$/m.test(approvedSources), 'reviewed rollout source SHA must remain approved.');
+  assert(source.includes('source_ref is not an approved scCCVGBen source revision'), 'unapproved source revisions must fail closed.');
 };
 
 export { validateWorkflow };

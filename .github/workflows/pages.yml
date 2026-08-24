@@ -28,6 +28,14 @@ jobs:
             echo "source_ref must be a 40-character lowercase commit SHA" >&2
             exit 1
           fi
+          if ! awk -v source_ref="$SOURCE_REF" '
+            /^[[:space:]]*#/ || /^[[:space:]]*$/ { next }
+            $0 == source_ref { found = 1 }
+            END { exit(found ? 0 : 1) }
+          ' .github/approved-scCCVGBen-source-shas.txt; then
+            echo "source_ref is not an approved scCCVGBen source revision" >&2
+            exit 1
+          fi
 
       - name: Checkout scCCVGBen source revision
         uses: actions/checkout@v4
