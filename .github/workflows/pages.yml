@@ -1,9 +1,12 @@
-name: Deploy GitHub Pages
+name: Deploy scCCVGBen GitHub Pages
 
 on:
-  push:
-    branches: [gh-pages]
   workflow_dispatch:
+    inputs:
+      source_ref:
+        description: 40-character scCCVGBen source commit SHA
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -15,36 +18,65 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate immutable source revision
+        env:
+          SOURCE_REF: ${{ inputs.source_ref }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$SOURCE_REF" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "source_ref must be a 40-character lowercase commit SHA" >&2
+            exit 1
+          fi
+
+      - name: Checkout scCCVGBen source revision
+        uses: actions/checkout@v4
+        with:
+          repository: PeterPonyu/scCCVGBen
+          ref: ${{ inputs.source_ref }}
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: webapp/package-lock.json
+
+      - name: Install dependencies
+        working-directory: webapp
+        run: npm ci
+
+      - name: Lint
+        working-directory: webapp
+        run: npm run lint
+
+      - name: Build static export with public base path
+        working-directory: webapp
+        env:
+          NEXT_PUBLIC_BASE_PATH: /scccvgben-next
+        run: npm run build
+
+      - name: Audit rendered site metadata
+        working-directory: webapp
+        run: npm run check:metadata
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: webapp/out
+
   deploy:
+    needs: build
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout static mirror
-        uses: actions/checkout@v4
-
-      - name: Configure Pages
-        uses: actions/configure-pages@v5
-
-      - name: Prepare Pages artifact
-        run: |
-          set -euo pipefail
-          rm -rf _site
-          mkdir _site
-          rsync -a --delete \
-            --exclude='.git' \
-            --exclude='.github' \
-            --exclude='_site' \
-            --exclude='README.md' \
-            ./ _site/
-          touch _site/.nojekyll
-
-      - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: _site
-
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
