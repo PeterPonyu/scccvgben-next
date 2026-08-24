@@ -9,17 +9,51 @@ const workflow = readFileSync(join(root, '.github', 'workflows', 'pages.yml'), '
 const assert = (condition, message) => {
   if (!condition) throw new Error(`Pages workflow contract failed: ${message}`);
 };
+const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-const workflowPermissions = workflow.match(/^permissions:\n((?:  .+\n)+)/m)?.[1] ?? '';
-assert(workflowPermissions.trim() === 'contents: read', 'workflow scope must grant only contents: read.');
+const jobBody = (source, name) => {
+  const match = source.match(
+    new RegExp(`^  ${escapeRegex(name)}:\\n([\\s\\S]*?)(?=^  [A-Za-z0-9_-]+:\\n|(?![\\s\\S]))`, 'm'),
+  );
+  return match?.[1] ?? '';
+};
 
-const deployJob = workflow.match(/^  deploy:\n([\s\S]*)$/m)?.[1] ?? '';
-assert(/\n    permissions:\n      pages: write\n      id-token: write\n/.test(deployJob), 'deploy job must grant pages: write and id-token: write.');
-assert(!/^  build:[\s\S]*?^  permissions:/m.test(workflow), 'build job must not grant deployment permissions.');
-assert(workflow.includes('source_ref must be a 40-character lowercase commit SHA'), 'immutable source_ref validation must remain.');
-assert(workflow.includes('repository: PeterPonyu/scCCVGBen'), 'source checkout must remain pinned to scCCVGBen.');
-assert(workflow.includes('npm run build') && workflow.includes('npm run check:metadata'), 'build and metadata audit steps must remain.');
-assert(workflow.includes('actions/upload-pages-artifact@v3') && workflow.includes('uses: actions/deploy-pages@v4'), 'artifact upload and deployment steps must remain.');
-assert(workflow.includes('workflow_dispatch:'), 'manual dispatch boundary must remain.');
+const validateWorkflow = (source) => {
+  const workflowPermissions = source.match(/^permissions:\n((?:  .+\n)+)/m)?.[1] ?? '';
+  assert(workflowPermissions.trim() === 'contents: read', 'workflow scope must grant only contents: read.');
 
-console.log('Pages workflow least-privilege contract passed.');
+  const buildJob = jobBody(source, 'build');
+  const deployJob = jobBody(source, 'deploy');
+  assert(/\n    permissions:\n      pages: write\n      id-token: write\n/.test(deployJob), 'deploy job must grant pages: write and id-token: write.');
+  assert(!/^    permissions:/m.test(buildJob), 'build job must not grant deployment permissions.');
+  assert(source.includes('source_ref must be a 40-character lowercase commit SHA'), 'immutable source_ref validation must remain.');
+  assert(source.includes('repository: PeterPonyu/scCCVGBen'), 'source checkout must remain pinned to scCCVGBen.');
+  assert(source.includes('npm run build') && source.includes('npm run check:metadata'), 'build and metadata audit steps must remain.');
+  assert(source.includes('actions/upload-pages-artifact@v3') && source.includes('uses: actions/deploy-pages@v4'), 'artifact upload and deployment steps must remain.');
+  assert(source.includes('workflow_dispatch:'), 'manual dispatch boundary must remain.');
+};
+
+const expectRejects = (name, source, message) => {
+  try {
+    validateWorkflow(source);
+  } catch (error) {
+    assert(error.message.includes(message), `${name} must reject with ${message}`);
+    return;
+  }
+  throw new Error(`Pages workflow self-test failed: ${name} was accepted.`);
+};
+
+if (process.argv.includes('--self-test')) {
+  const buildPermissionMutation = workflow.replace(
+    '  build:\n',
+    '  build:\n    permissions:\n      pages: write\n      id-token: write\n',
+  );
+
+  validateWorkflow(workflow);
+  expectRejects('build job deployment permissions', buildPermissionMutation, 'build job must not grant deployment permissions');
+  expectRejects('workflow deployment permissions', workflow.replace('permissions:\n  contents: read', 'permissions:\n  contents: read\n  pages: write'), 'workflow scope must grant only contents: read');
+  expectRejects('missing deploy id-token', workflow.replace('      id-token: write\n', ''), 'deploy job must grant pages: write and id-token: write');
+} else {
+  validateWorkflow(workflow);
+  console.log('Pages workflow least-privilege contract passed.');
+}
