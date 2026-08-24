@@ -24,7 +24,13 @@ const validateWorkflow = (source) => {
 
   const buildJob = jobBody(source, 'build');
   const deployJob = jobBody(source, 'deploy');
-  assert(/\n    permissions:\n      pages: write\n      id-token: write\n/.test(deployJob), 'deploy job must grant pages: write and id-token: write.');
+  const deployPermissions = deployJob.match(/^    permissions:\n((?:      .+\n)+)/m)?.[1] ?? '';
+  const normalizedDeployPermissions = deployPermissions
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .join('\n');
+  assert(normalizedDeployPermissions === 'pages: write\nid-token: write', 'deploy job must grant pages: write and id-token: write.');
   assert(!/^    permissions:/m.test(buildJob), 'build job must not grant deployment permissions.');
   assert(source.includes('source_ref must be a 40-character lowercase commit SHA'), 'immutable source_ref validation must remain.');
   assert(source.includes('repository: PeterPonyu/scCCVGBen'), 'source checkout must remain pinned to scCCVGBen.');
@@ -33,11 +39,13 @@ const validateWorkflow = (source) => {
   assert(source.includes('workflow_dispatch:'), 'manual dispatch boundary must remain.');
 };
 
+export { validateWorkflow };
+
 const expectRejects = (name, source, message) => {
   try {
     validateWorkflow(source);
   } catch (error) {
-    assert(error.message.includes(message), `${name} must reject with ${message}`);
+    assert(error.message === `Pages workflow contract failed: ${message}.`, `${name} must reject with ${message}`);
     return;
   }
   throw new Error(`Pages workflow self-test failed: ${name} was accepted.`);
@@ -53,6 +61,7 @@ if (process.argv.includes('--self-test')) {
   expectRejects('build job deployment permissions', buildPermissionMutation, 'build job must not grant deployment permissions');
   expectRejects('workflow deployment permissions', workflow.replace('permissions:\n  contents: read', 'permissions:\n  contents: read\n  pages: write'), 'workflow scope must grant only contents: read');
   expectRejects('missing deploy id-token', workflow.replace('      id-token: write\n', ''), 'deploy job must grant pages: write and id-token: write');
+  expectRejects('extra deploy contents permission', workflow.replace('      id-token: write\n', '      id-token: write\n      contents: write\n'), 'deploy job must grant pages: write and id-token: write');
 } else {
   validateWorkflow(workflow);
   console.log('Pages workflow least-privilege contract passed.');
