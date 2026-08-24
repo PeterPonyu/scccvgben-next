@@ -2,11 +2,13 @@ name: Validate scCCVGBen Pages workflow
 
 on:
   pull_request:
+    branches: [gh-pages]
     paths:
       - '.github/workflows/pages.yml'
       - '.github/workflows/pages-validation.yml'
       - '.github/approved-scCCVGBen-source-shas.txt'
       - 'scripts/check-pages-workflow.mjs'
+      - 'scripts/validate-approved-source.mjs'
 
 permissions:
   contents: read
@@ -16,10 +18,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout pull request
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Setup Node 20
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '20'
 
@@ -27,9 +31,12 @@ jobs:
         run: |
           node scripts/check-pages-workflow.mjs
           node scripts/check-pages-workflow.mjs --self-test
+          node scripts/validate-approved-source.mjs --self-test
 
       - name: Check JavaScript syntax
-        run: node --check scripts/check-pages-workflow.mjs
+        run: |
+          node --check scripts/check-pages-workflow.mjs
+          node --check scripts/validate-approved-source.mjs
 
       - name: Parse workflow YAML
         run: ruby -e "require 'yaml'; ARGV.each { |path| YAML.parse_file(path) }" .github/workflows/pages.yml .github/workflows/pages-validation.yml
