@@ -12,7 +12,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const pagesWorkflow = readFileSync(join(root, '.github', 'workflows', 'pages.yml'), 'utf8');
 const validationWorkflow = readFileSync(join(root, '.github', 'workflows', 'pages-validation.yml'), 'utf8');
 const approvedSources = readFileSync(join(root, '.github', 'approved-scCCVGBen-source-shas.txt'), 'utf8');
-const approvedSource = '3f1db58802db1638e61e31432db8551bc8b93ed4';
+const approvedSource = 'f1f8ffdeb2f11a3b4a431736080559aa6770dc64';
 const pins = {
   checkout: ['11d5960a326750d5838078e36cf38b85af677262', 'v4'],
   'setup-node': ['49933ea5288caeca8642d1e84afbd3f7d6820020', 'v4'],

@@ -1,6 +1,7 @@
 # Approved source revisions for the manual Pages deployment.
 #
-# 3f1db58802db1638e61e31432db8551bc8b93ed4 was reviewed for rollout on
-# 2026-08-24. The source commit records its lint, public-base build, and
-# metadata-audit evidence; it is the source SHA bound by the rollout spec.
-3f1db58802db1638e61e31432db8551bc8b93ed4
+# The previous rollout (3f1db58…) was superseded on 2026-09-02. The checker
+# intentionally permits only the current source revision below.
+# 2026-09-02: public graph navigation release; local lint, public-base build,
+# metadata audit, Hugo build, and cross-surface link tests passed.
+f1f8ffdeb2f11a3b4a431736080559aa6770dc64
